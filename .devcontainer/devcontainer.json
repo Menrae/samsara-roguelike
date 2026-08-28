@@ -1,0 +1,45 @@
+{
+  "name": "samsara-roguelike",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "workspaceFolder": "/workspaces/samsara-roguelike",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/samsara-roguelike,type=bind",
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "geequlim.godot-tools",
+        "editorconfig.editorconfig"
+      ]
+    }
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/node:2.1.0": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  },
+
+  // WSLg passthrough: lets the Godot editor GUI open on the Windows desktop from inside the
+  // container. Optional — headless (make check / make run) is the primary workflow and does
+  // not need any of this.
+  "mounts": [
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+    "source=/mnt/wslg,target=/mnt/wslg,type=bind",
+    "source=samsara-roguelike-bash-history,target=/commandhistory,type=volume",
+    "source=samsara-roguelike-godot-config,target=/home/vscode/.config/godot,type=volume",
+    "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume"
+  ],
+  "remoteEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "XDG_RUNTIME_DIR": "/mnt/wslg/runtime-dir",
+    "PULSE_SERVER": "/mnt/wslg/PulseServer",
+    "HISTFILE": "/commandhistory/.bash_history",
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.claude /home/vscode/.config/godot /commandhistory"
+}

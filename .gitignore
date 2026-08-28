@@ -1,0 +1,24 @@
+# Godot 4 generated/cache directory
+.godot/
+
+# Android export scaffolding
+/android/
+
+# Generated translation catalogs (compiled from .po)
+*.translation
+
+# Godot editor crash/backup files
+*.tmp
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor noise
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# NOTE: .tres, .tscn, and .import files are project source and must stay tracked.
