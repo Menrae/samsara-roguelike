@@ -12,3 +12,11 @@ config_version=5
 
 config/name="samsara-roguelike"
 config/features=PackedStringArray("4.7")
+run/main_scene="res://scenes/debug/m0_smoke.tscn"
+
+[autoload]
+
+EventBus="*res://src/autoload/EventBus.gd"
+RunState="*res://src/autoload/RunState.gd"
+ItemDB="*res://src/autoload/ItemDB.gd"
+Textures="*res://src/autoload/Textures.gd"

@@ -64,3 +64,13 @@ RUN gdformat --version && gdlint --version || true
 
 USER ${USERNAME}
 WORKDIR /workspaces/samsara-roguelike
+
+# Pre-create config/cache dirs so named volumes mounted here inherit correct
+# ownership from the image instead of being created root-owned by Docker.
+RUN mkdir -p /home/${USERNAME}/.config/godot \
+             /home/${USERNAME}/.cache/godot \
+             /home/${USERNAME}/.local/share/godot \
+    && chown -R ${USER_UID}:${USER_GID} \
+             /home/${USERNAME}/.config \
+             /home/${USERNAME}/.cache \
+             /home/${USERNAME}/.local
