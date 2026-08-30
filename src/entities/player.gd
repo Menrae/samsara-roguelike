@@ -1,10 +1,12 @@
 extends CharacterBody2D
-## Player entity: 8-directional WASD movement, plain exported speed/health
-## constants (stats connect at M3 — do not read RunState here). Takes damage,
-## flashes through brief i-frames, and emits EventBus.player_died(cause) at 0 HP.
-## Firing lives in weapon.gd (a sibling component), not here.
+## Player entity: 8-directional WASD movement, takes damage, flashes through
+## brief i-frames, and emits EventBus.player_died(cause) at 0 HP. Firing
+## lives in weapon.gd (a sibling component), not here. base_move_speed is
+## the M1 constant; SPEED scales it via Stats.scale, read every physics
+## frame (not cached) so a permutation is felt immediately — see
+## docs/PROJECT_PLAN.md §1.
 
-@export var move_speed: float = 220.0
+@export var base_move_speed: float = 220.0
 @export var max_health: float = 100.0
 @export var iframe_duration: float = 0.6
 @export var flash_interval: float = 0.08
@@ -27,7 +29,8 @@ func _physics_process(delta: float) -> void:
 		Input.get_action_strength("move_right") - Input.get_action_strength("move_left"),
 		Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
 	).normalized()
-	velocity = input_dir * move_speed
+	var speed_scale := Stats.scale(RunState.assignment.get("SPEED", 0.0), RunState.stat_values)
+	velocity = input_dir * base_move_speed * speed_scale
 	move_and_slide()
 
 	if _invincible:

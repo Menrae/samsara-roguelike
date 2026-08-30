@@ -2,8 +2,9 @@ class_name LabyrinthGen
 extends RefCounted
 ## Generates a room GRAPH (nodes = rooms, edges = doors) from a seed. Pure and
 ## deterministic: the same seed+depth+luck always produces the same graph.
-## depth and luck are passed in explicitly (M2 does not read RunState) — this
-## is the hook M3 wires to the real LUCK stat and run depth.
+## depth and luck are passed in explicitly, not read from RunState — callers
+## (M3's rift.gd via RoomManager) snapshot RunState.assignment.LUCK at the
+## moment of generation and pass it in.
 ##
 ## Graph shape: concentric RINGS around a center. Ring 0 is outermost (start),
 ## the innermost ring holds the exit. Rooms in a ring form a cycle (CLOCKWISE /
@@ -11,7 +12,8 @@ extends RefCounted
 ## guaranteed complete loop. Adjacent rings connect via a scarce set of radial
 ## (INWARD / OUTWARD) doors — luck controls how many. door_sides on the
 ## existing room templates ("N","E","S","W") are reused unchanged as the
-## physical slots for these four logical directions.
+## physical slots for these four logical directions. LUCK also controls how
+## many non-start rooms carry a rift (node["rift_color"], "" if none).
 
 const ROOM_TEMPLATE_DIR := "res://data/rooms/"
 
@@ -21,6 +23,8 @@ const DIRECTION_TO_SIDE := {
 	"CLOCKWISE": "E",
 	"COUNTERCLOCKWISE": "W",
 }
+
+const RIFT_COLORS := ["RED", "BLUE", "GREEN"]
 
 
 static func generate(seed_value: int, depth: int, luck: int) -> Dictionary:
@@ -39,6 +43,7 @@ static func generate(seed_value: int, depth: int, luck: int) -> Dictionary:
 	var nodes := _build_rings(rng, ring_count, ring_size, radial_count)
 	_assign_roles(rng, nodes, ring_count)
 	_assign_rewards(rng, nodes, luck)
+	_assign_rifts(rng, nodes, luck)
 	_assign_templates(rng, nodes, templates)
 
 	var exit_id := 0
@@ -206,6 +211,27 @@ static func _assign_rewards(rng: RandomNumberGenerator, nodes: Dictionary, luck:
 			node["has_reward"] = true
 		else:
 			node["has_reward"] = node["role"] == "normal" and rng.randf() < reward_chance
+
+
+## LUCK's third lever (alongside radial_count and reward density): how many
+## non-start rooms carry a rift, and which color. Scaled the same way as
+## radial doors — findable but not guaranteed, capped well under "every
+## room" so rifts stay a deliberate detour rather than wallpaper.
+static func _assign_rifts(rng: RandomNumberGenerator, nodes: Dictionary, luck: int) -> void:
+	var eligible: Array = []
+	for id in nodes.keys():
+		var node: Dictionary = nodes[id]
+		node["rift_color"] = ""
+		if node["role"] != "start":
+			eligible.append(id)
+
+	var max_rifts: int = maxi(1, eligible.size() / 3)
+	var rift_count: int = clampi(1 + int(luck / 3.0), 0, mini(max_rifts, eligible.size()))
+
+	_seeded_shuffle(eligible, rng)
+	for i in range(rift_count):
+		var id: int = eligible[i]
+		nodes[id]["rift_color"] = RIFT_COLORS[rng.randi_range(0, RIFT_COLORS.size() - 1)]
 
 
 static func _assign_templates(

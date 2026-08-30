@@ -1,136 +1,156 @@
 # STATE
 
-CURRENT MILESTONE: M2 — Labyrinth Generation
-LAST SESSION: 2026-08-29 — M2 topology REVISED mid-milestone from a branching tree to concentric
-rings, per direct instruction (see DECISIONS.md D-010 for full rationale). labyrinth_gen.gd and
-labyrinth_overlay.gd were rewritten; room_manager.gd, room_template.gd, all 6 templates, and the
-seed/determinism/headless-verification approach were preserved as instructed. Headless-verified
-for correctness (see KNOWN GOOD) but NOT yet eyeballed by the user in a real window — see NEXT
-TASK. (Prior session's tree-topology eyeball task never happened before this revision landed —
-this is the first real-window check of any M2 layout.)
+CURRENT MILESTONE: M3 — Stats & Rifts
+LAST SESSION: 2026-08-30 — Built the conserved-multiset stat system, wired SPEED/POWER/LUCK into
+the M1 player/weapon and M2 labyrinth generator, added chromatic rifts (deliberate-interact
+entry → permute → regenerate at the same ring), luck-scaled rift spawning in the labyrinth
+itself, a persistent animated stat display, and scenes/debug/m3_rift_test.tscn as the new main
+scene. Note: M2's ring-topology eyeball check (STATE.md's previous NEXT TASK) was never
+confirmed back to me before this session's direct instruction to move straight to M3 — proceeding
+per that explicit instruction, but the M2 ring layout is technically still unconfirmed in a real
+window on top of M3 now also being unconfirmed. Headless-verified extensively (see KNOWN GOOD)
+but NOT yet played in a real window — see NEXT TASK. Per explicit instruction this session,
+**nothing is newly locked** — PROJECT_PLAN lists `rift.gd`/`RunState.gd` as M3 locks, but the
+session brief said "do not lock anything — this needs tuning," which overrides that.
 
 ## LOCKED (working — propose diffs, do not rewrite)
 - src/autoload/EventBus.gd
 
 ## IN PROGRESS (safe to edit freely)
-- src/autoload/RunState.gd (rewritten at M3)
 - src/autoload/ItemDB.gd (rewritten at M4)
 - src/autoload/Textures.gd
 - scenes/debug/m0_smoke.tscn / .gd
-- src/entities/player.gd + scenes/entities/player.tscn — untouched this session; M2 adds the
-  player to group "player" at runtime (in scenes/debug/m2_gen_test.gd) rather than editing
-  player.gd, per instruction not to touch M1 entity code without proposing a diff first.
-- src/entities/weapon.gd — the seam M4 items modify; fire_rate/spread/projectile_count
-  values are placeholders.
-- src/entities/projectile.gd + scenes/entities/projectile.tscn
-- src/entities/dummy_enemy.gd + scenes/entities/dummy_enemy.tscn
-- scenes/rooms/test_room.tscn — superseded as main scene by scenes/debug/m2_gen_test.tscn;
-  left in place, unreferenced, in case it's still wanted as a raw M1 sandbox.
-- src/systems/labyrinth_gen.gd — REWRITTEN this session (was a branching tree, now concentric
-  rings — DECISIONS.md D-010). Deterministic room-graph generator (seed/depth/luck in, graph
-  dict out); nodes carry ring/ring_index/edges (direction-labeled) plus the door_map (physical
-  side-labeled) room_manager consumes. **Not locked yet** — only lock once the user's eyeball
-  test on scenes/debug/m2_gen_test.tscn confirms the ring layout reads as intentional, per the
-  user's explicit instruction this session.
-- src/entities/room_template.gd — NEW. Base script shared by every data/rooms/*.tscn. Builds
-  floor/walls/doors procedurally in `_ready()` from `room_size` + whichever `active_doors`
-  room_manager passes via `setup()` — a template only hand-declares size and which of its 4
-  sides CAN host a door; the actual wall/gap geometry is code, not hand-placed nodes.
-- src/systems/room_manager.gd — NEW, one-line change this session: reward markers now spawn on
-  `node.has_reward` (set by labyrinth_gen — always true for dead ends, probabilistic elsewhere
-  based on luck) instead of hardcoding `role == "dead_end"`. Otherwise unchanged: loads/frees the
-  current room, tracks visited rooms, handles door transitions. Player node is owned by the
-  caller and persists across room swaps.
-- src/debug/labyrinth_overlay.gd — REWRITTEN this session for the ring topology. Draws concentric
-  rings (ring 0 outermost), nodes placed by ring/ring_index angle, role-colored, current room
-  highlighted, radial (IN/OUT) edges drawn distinctly (brighter/thicker) from lateral (CW/CCW)
-  ones, reward rooms get a small gold ring, plus seed/depth/luck/room/ring-count readout.
-  Designer-facing only.
-- data/rooms/*.tscn — NEW, 6 templates (room_deadend, room_corridor, room_corner, room_hub3,
-  room_hub4, room_cross_large), sizes 600x500 to 1200x900, 1 to 4 door-capable sides. All
-  share room_template.gd; adding a 7th template is a new file here, no system edit needed —
-  labyrinth_gen scans this directory rather than hardcoding a template list.
-- scenes/debug/m2_gen_test.tscn / .gd — NEW. The main scene (project.godot `run/main_scene`
-  now points here instead of scenes/rooms/test_room.tscn). SPACE = new random seed, UP/DOWN =
-  luck ±1, LEFT/RIGHT = depth ±1/-1, each regenerating in place.
+- scenes/rooms/test_room.tscn — unreferenced raw M1 sandbox, untouched.
+- src/entities/dummy_enemy.gd + scenes/entities/dummy_enemy.tscn — untouched this session.
+- src/entities/projectile.gd + scenes/entities/projectile.tscn — untouched this session.
+- src/autoload/RunState.gd — gained one method, `permute(guaranteed_highest="")`: duplicates the
+  current assignment, calls `Stats.permute(stat_values, guaranteed_highest)`, stores the result,
+  emits `EventBus.stats_permuted(old_assignment, new_assignment)`. Still just data + this one
+  method — the multiset math itself lives in stats.gd. **Not locked** — see above.
+- src/systems/stats.gd — NEW. `class_name Stats extends RefCounted`, pure/stateless (same split
+  as LabyrinthGen vs RoomManager): `Stats.permute(stat_values, guaranteed_highest)` returns a new
+  assignment dict (multiset conserved, optional stat forced to the max value); `Stats.scale(value,
+  stat_values)` returns value/average — average is recomputed from stat_values every call, not a
+  hardcoded baseline, so it stays correct if a future milestone changes the multiset (DECISIONS.md
+  D-013).
+- src/entities/player.gd — `move_speed` renamed `base_move_speed` (now the M1 constant a stat
+  scales, not the actual speed used); `_physics_process` computes `speed_scale =
+  Stats.scale(RunState.assignment.get("SPEED",0.0), RunState.stat_values)` fresh every frame (not
+  cached) and applies it, so a permutation is felt on the very next frame.
+- src/entities/weapon.gd — `fire_rate`/`damage` renamed `base_fire_rate`/`base_damage`.
+  `_speed_scale()`/`_power_scale()` helpers wrap `Stats.scale`; fire cooldown and per-shot damage
+  both read fresh on every shot, not cached.
+- src/entities/rift.gd + scenes/entities/rift.tscn — NEW. Chromatic-only this milestone
+  (RED→POWER, BLUE→SPEED, GREEN→LUCK guaranteed highest). An Area2D that tracks player overlap
+  but only acts on a deliberate "interact" (E key) press — never on overlap alone. On activation:
+  `RunState.permute(color's stat)`, `RunState.rifts_taken += 1`, emits
+  `EventBus.rift_entered(color, "none")`. Holds **no reference to RoomManager** — the
+  regeneration/ring-preserving handoff is RoomManager's job, reacting to that signal
+  (DECISIONS.md D-011). `[E]` prompt label shows only while the player is standing on it.
+- src/systems/room_manager.gd — gained: a `_ready()` that connects `EventBus.rift_entered`;
+  `_on_rift_entered()` (reads the current room's ring + the just-permuted LUCK, generates a new
+  graph at the same `RunState.depth`, calls the below); `regenerate_at_ring(new_graph, ring)`
+  (like `start()` but drops the player into a random room on `ring` instead of always
+  `start_id`); `_spawn_rift()` (instantiates `scenes/entities/rift.tscn` into a room whose graph
+  node has a `rift_color`, mirroring the existing `_spawn_reward_marker` pattern); a small
+  `_clear_current_room()` helper factored out of `start()`/`regenerate_at_ring()`. Otherwise
+  unchanged.
+- src/systems/labyrinth_gen.gd — gained `_assign_rifts()`, called from `generate()` after
+  rewards: sets `node["rift_color"]` to `""` or one of RED/BLUE/GREEN for a luck-scaled count of
+  non-start rooms (same "findable but not guaranteed" shape as radial_count — see DECISIONS.md
+  D-010's rationale, extended). depth/luck/seed contract, ring topology, and everything else from
+  the M2 session unchanged; **still not locked** (M2's own eyeball confirmation is still
+  outstanding — see LAST SESSION note above).
+- src/ui/stat_display.gd + scenes/ui/stat_display.tscn — NEW. Persistent HUD (top-right),
+  independent of the debug scenes — meant to be the real in-game stat UI going forward, not a
+  debug-only overlay (unlike labyrinth_overlay.gd). On `EventBus.stats_permuted`, each stat's new
+  value visibly flies from the row of whichever stat held that value before to the row that holds
+  it now (matched by value, not tracked identity — DECISIONS.md D-014), plus a brief scale-pulse
+  on whichever stat lands highest.
+- scenes/debug/m3_rift_test.tscn / .gd — NEW. The main scene (project.godot `run/main_scene` now
+  points here instead of scenes/debug/m2_gen_test.tscn). Sets `RunState.stat_values = [9,5,1]`
+  and does an initial unguaranteed permute on boot, generates a real labyrinth via
+  LabyrinthGen/RoomManager, and places all three rift colors as fixed-position siblings of
+  RoomManager near the room origin so they're always available regardless of which room is
+  currently loaded (DECISIONS.md D-015 — exploits D-007's shared-origin room placement). Also
+  shows a raw `stat_values`/`assignment`/`ring` debug readout (separate from the polished
+  stat_display). No SPACE/UP/DOWN/LEFT/RIGHT controls this time — luck is driven by rifting, not
+  a debug key.
 
 ## NEXT TASK
-Run the project in a real window (`make run` or `make editor`) and eyeball the M2 (ring
-revision) "Done when" criteria:
-- The overlay reads as a legible concentric map: rings visibly nested, current room highlighted,
-  radial connections visually distinct from the lateral ring connections.
-- Press UP a few times (raise luck) — confirm more radial (orange) shortcut lines appear between
-  rings. Press DOWN — confirm they thin back out and you're forced to walk the ring laterally to
-  find a way inward.
-- Press LEFT/RIGHT — confirm ring count and rooms-per-ring visibly grow/shrink.
-- Walk through doors between rooms (player should pass cleanly through the gold door gap and
-  land just inside the new room, not stuck on a wall) — confirm you can walk both inward
-  (toward the center) and laterally (around a ring).
-Report back — if it reads well, labyrinth_gen.gd gets marked LOCKED and M2 is done; if the
-ring/radial-count feel is off, the tuning formulas in `LabyrinthGen.generate()` (ring_count,
-ring_size, radial_count) and the sever_target line in `_build_rings()` are the place to adjust,
-not the graph algorithm itself. Do not start M3 (Stats & Rifts) until that confirmation happens.
+Play `scenes/debug/m3_rift_test.tscn` in a real window (`make run` or `make editor`) and check
+the M3 "Done when" criteria:
+- Walk to the red rift, stand on it, press **E** deliberately (confirm it does NOT trigger just
+  from walking over it) — POWER should visibly animate to the highest value in the stat display
+  (top-right), with its value flying in from wherever it used to be.
+- Confirm the character actually plays differently afterward — movement speed and fire rate
+  should feel different depending on which stat is currently highest (SPEED vs POWER vs LUCK).
+- Confirm you land in a freshly generated labyrinth, on the same ring you rifted from (check the
+  minimap ring highlight before/after, and the raw debug label's `ring=` line).
+- Try the blue and green rifts too — SPEED and LUCK should each visibly take the top slot.
+- At various points, note whether rifts feel "findable but not guaranteed" while exploring
+  further out (not just the 3 guaranteed ones by spawn) — this is luck-scaled and may need
+  tuning.
+Report back. Tuning knobs if something feels off, all safe to adjust freely (nothing is locked):
+- `Stats.scale()` in src/systems/stats.gd — the speed/damage/fire-rate multiplier curve.
+- `_assign_rifts()` in src/systems/labyrinth_gen.gd — how many rooms get a rift and how that
+  scales with luck (`max_rifts`, the `1 + int(luck/3.0)` formula).
+- `ROW_HEIGHT`/`FLIGHT_DURATION`/etc. in src/ui/stat_display.gd — animation pacing.
+- `base_move_speed`/`base_fire_rate`/`base_damage` on the Player/Weapon scenes — the M1 baseline
+  constants the stats scale.
+Also still outstanding from last session: M2's ring-topology eyeball check was never explicitly
+confirmed (see LAST SESSION note) — worth a look while in here regardless of M3 feedback.
+Do not lock anything and do not start M4 (Items) until this is confirmed.
 
 ## KNOWN GOOD
 - `godot --headless --version` → 4.7.1.stable.official.a13da4feb
 - `make check` exits 0 (gdlint clean, headless import pass clean) against the current repo.
-- `bash scripts/godot.sh --headless --quit` boots scenes/rooms/test_room.tscn (now the main
-  scene) with no runtime errors.
-- Input map (move_up/down/left/right = WASD, fire = mouse left click) is registered in
-  project.godot under [input]; config_version untouched. Physics layers named in
-  [layer_names] (walls/player/enemies/projectiles) — see DECISIONS.md D-004.
-- Headless SceneTree simulation scripts (written to scratchpad, not part of the repo)
-  confirmed, prior session, all mechanically:
-  - CharacterBody2D + StaticBody2D wall collision actually stops the player at the wall face.
-  - Weapon-fired projectiles travel, hit the dummy enemy, and kill it in 3 shots at default
-    damage (10) vs. default health (30).
-  - Contact damage: standing on the dummy enemy applies damage on entry and again on each
-    ContactTimer tick while overlapping.
-  - Player i-frames correctly block a second hit taken immediately after the first, and
-    correctly allow damage again once the i-frame window has elapsed.
-  - Lethal damage frees the player and emits `EventBus.player_died(cause)` with the given
-    cause string.
-  - projectile_count=5 / spread=30 fires 5 projectiles in one call without error (the
-    multi-shot path works, not just the count=1 default).
-- Confirmed in a real window, this session: WASD movement, mouse aim/fire, dummy kill, contact
-  damage + death with i-frame flash — the M1 "Done when" criteria, previously only
-  headless-verified.
-- Headless SceneTree scripts this session (scratchpad, not part of the repo) confirmed:
-  - `LabyrinthGen.generate(seed, depth, luck)` is deterministic (same inputs → identical
-    graph) and different seeds diverge.
-  - Room count and dead-end count both scale up reliably with luck **per individual seed**,
-    not just on average (this needed a fix — see DECISIONS.md).
-  - Every generated graph has exactly one start and one exit room, every room is reachable
-    from start, and each door_map is a consistent bijection (A's door to B always has a
-    matching door back from B to A).
-  - Driving a real `RoomManager` through a generated graph via a simulated `door_entered`
-    signal correctly updates `current_room_id` and `visited` per the graph's door_map.
-  - All 6 room templates build the correct wall/door topology: N active doors → N Area2D
-    triggers each with a non-degenerate `RectangleShape2D`, and the remaining sides sealed as
-    solid `StaticBody2D` walls; zero active doors → exactly 4 solid walls, 0 doors.
-- `godot --headless --path . scenes/debug/m2_gen_test.tscn --quit-after 60` boots the new main
-  scene for 60 frames with zero errors/warnings.
-- `make check` still exits 0 (gdlint clean, headless import pass clean) after the ring rewrite.
-- Headless SceneTree scripts this session (scratchpad, not part of the repo) confirmed, across a
-  spread of seeds × depths × lucks (including negative luck):
-  - `LabyrinthGen.generate(seed, depth, luck)` is still deterministic and different seeds still
-    diverge.
-  - Every generated graph has exactly one start and one exit room, the exit is always in the
-    innermost ring, every room is reachable from start (the sever/repair backfill holds), and
-    every ring loses at least one lateral edge (never a guaranteed complete loop).
-  - door_map is still a consistent bijection (A's door to B always has a matching door back).
-  - Averaged over 60 seeds at depth=2: luck=0 → 3.00 avg radial doors, luck=12 → 15.00 avg —
-    luck's primary radial-scarcity lever scales strongly and reliably.
-  - depth=0 → 2 rings / 6 rooms vs. depth=5 → 6 rings / 48 rooms — depth's ring-count/room-count
-    lever scales as expected.
-  - Driving a real `RoomManager` through a full generated graph (every door out of every
-    reachable room) via simulated `door_entered` correctly reaches every room and matches the
-    graph's door_map at each step.
-  - For every node across the seed/depth/luck spread, the chosen template's door_sides is a
-    superset of every physical side its door_map actually uses (the OUTWARD=N / INWARD=S /
-    CLOCKWISE=E / COUNTERCLOCKWISE=W mapping never picks a template missing a required side).
+- Input map (move_up/down/left/right = WASD, fire = mouse left click, **interact = E**,
+  added this session the same programmatic way as D-004) is registered in project.godot under
+  [input]; config_version untouched. Physics layers named in [layer_names]
+  (walls/player/enemies/projectiles) — see DECISIONS.md D-004.
+- Headless SceneTree simulation scripts (scratchpad, not part of the repo) confirmed, prior
+  sessions, all mechanically: wall collision, projectile-kills-dummy in 3 shots, contact damage
+  ticking, player i-frames blocking/re-enabling correctly, lethal damage emitting
+  `EventBus.player_died`, multi-shot/spread firing, all 6 room templates' wall/door topology,
+  ring-topology connectivity/bijection/severing/luck-scaling invariants across a seed/depth/luck
+  spread, and a real RoomManager walking a full generated graph via simulated `door_entered`.
+- Confirmed in a real window, M1 session: WASD movement, mouse aim/fire, dummy kill, contact
+  damage + death with i-frame flash — the M1 "Done when" criteria.
+- `godot --headless --path . scenes/debug/m2_gen_test.tscn --quit-after 60` boots with zero
+  errors/warnings (M2 session).
+- Headless SceneTree scripts this session (temporary scenes under scenes/debug/, deleted before
+  finishing — real scenes were needed, not `--script` mode, since autoloads only initialize for
+  an actual scene run) confirmed:
+  - `Stats.permute()`: multiset conserved (sorted assigned values == sorted input) across 500
+    trials mixing all four guarantee options; guaranteed_highest always receives the true max.
+  - `Stats.scale()`: scale(average, values) == 1.0 exactly; scale(9, [9,5,1]) == 9/5;
+    scale(1, [9,5,1]) == 1/5; scale(anything, []) == 1.0 (safe default pre-run-init).
+  - `RunState.permute()`: emits exactly one `stats_permuted(old, new)` per call; `old` is the
+    pre-call snapshot (not aliased/mutated after the fact); `RunState.assignment` matches the
+    emitted `new`; a second permute's `old` equals the first permute's `new`.
+  - `LabyrinthGen._assign_rifts()`: every node has a `rift_color` key (never missing), always ""
+    or a real color, never on the start room; averaged over 60 seeds at depth=2, luck=0 → 1.00
+    avg rifts/graph vs. luck=15 → 6.00 avg — scales strongly with luck, same shape as
+    radial_count.
+  - Full rift-entry flow driven through the REAL RoomManager + a REAL spawned Rift node (not a
+    mock): walked a BFS path from start to a rift room, confirmed RoomManager actually spawned a
+    `Rift` child there with the graph's chosen color; called `rift._enter()`; confirmed
+    `RunState.rifts_taken` incremented by exactly 1, the color's stat was left holding the
+    multiset's true max, `RoomManager.graph`'s seed changed (real regeneration, not a no-op), the
+    new graph's `depth` still equals `RunState.depth` (reused, not altered), and the player's new
+    room is on the SAME ring as before entry.
+  - SPEED/POWER/fire-rate scaling verified through the REAL Player/Weapon scenes, not just
+    Stats math in isolation: SPEED=5 (the multiset's average) reproduces `base_move_speed`
+    exactly; SPEED=9 vs SPEED=1 gives velocities of 396 vs 44 (a clean 9x ratio, matching
+    value/average); POWER=9 vs POWER=1 gives a 9x damage-scale ratio; SPEED=9 vs SPEED=1 gives
+    fire cooldowns of 0.139s vs 1.25s.
+  - Re-ran the full M2 connectivity/bijection/template-compatibility invariant suite after this
+    session's labyrinth_gen.gd changes (rift assignment added) — still all pass, no regression.
+- `godot --headless --path . scenes/debug/m3_rift_test.tscn --quit-after 120` boots the new main
+  scene for 120 frames with zero errors/warnings.
 
 ## OPEN ENVIRONMENT ISSUE
-D-002 recurrence noted last session (`/home/vscode/.config/godot` root-owned) appears
-resolved: `ls -ld` now shows `vscode:vscode` ownership. Not re-verified by actually opening
-the GUI editor this session — if `make editor` still fails, re-apply the D-002 fix.
+D-002 recurrence noted two sessions ago (`/home/vscode/.config/godot` root-owned) appeared
+resolved as of last session (`ls -ld` showed `vscode:vscode` ownership). Still not re-verified by
+actually opening the GUI editor — if `make editor` fails, re-apply the D-002 fix.

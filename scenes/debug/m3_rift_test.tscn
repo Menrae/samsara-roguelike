@@ -1,0 +1,45 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scenes/debug/m3_rift_test.gd" id="1"]
+[ext_resource type="Script" path="res://src/systems/room_manager.gd" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/entities/player.tscn" id="3"]
+[ext_resource type="Script" path="res://src/debug/labyrinth_overlay.gd" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/ui/stat_display.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/entities/rift.tscn" id="6"]
+
+[node name="M3RiftTest" type="Node2D"]
+script = ExtResource("1")
+
+[node name="RoomManager" type="Node2D" parent="."]
+script = ExtResource("2")
+
+[node name="Player" parent="." instance=ExtResource("3")]
+
+[node name="RedRift" parent="." instance=ExtResource("6")]
+position = Vector2(-160, -80)
+color = "RED"
+
+[node name="BlueRift" parent="." instance=ExtResource("6")]
+position = Vector2(160, -80)
+color = "BLUE"
+
+[node name="GreenRift" parent="." instance=ExtResource("6")]
+position = Vector2(0, 130)
+color = "GREEN"
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+
+[node name="Overlay" type="Control" parent="DebugOverlay"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("4")
+
+[node name="DebugLabel" type="Label" parent="DebugOverlay"]
+offset_left = 10.0
+offset_top = 440.0
+offset_right = 700.0
+offset_bottom = 540.0
+mouse_filter = 2
+
+[node name="StatDisplay" parent="." instance=ExtResource("5")]

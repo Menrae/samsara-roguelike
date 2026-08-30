@@ -138,3 +138,71 @@ script across a spread of seeds/depths/lucks (see scratchpad, not part of the re
 verified headlessly: door_map is still a consistent bijection, every template's door_sides is a
 superset of whatever physical sides its door_map actually uses, and a real RoomManager walks
 every generated door to the room the graph says it should.
+
+## D-011 — RoomManager owns rift-triggered regeneration; rift.gd holds no reference to it
+2026-08-30
+M3 needs "entering a rift regenerates the labyrinth at the same ring." The obvious wiring is
+rift.gd calling straight into RoomManager, but that's exactly the direct cross-system reference
+CLAUDE.md forbids, and it would mean rift.gd has to be handed a RoomManager reference at spawn
+time for no other reason. Decision: rift.gd only permutes RunState and emits
+`EventBus.rift_entered(color, "none")` — it doesn't know RoomManager exists. RoomManager's own
+`_ready()` connects to that signal and does the regeneration itself (reads its own
+`current_room_id`'s ring from the graph it already owns, reads the just-permuted
+`RunState.assignment.LUCK`, generates a new graph, calls its own `regenerate_at_ring`). This
+mirrors the existing RoomTemplate → RoomManager relationship (RoomTemplate emits
+`door_entered`, knows nothing about RoomManager; RoomManager connects and reacts) rather than
+inventing a new coupling style. Bonus: any other listener (future karma/UI/audio reactions to a
+rift) can hang off the same signal without rift.gd changing at all.
+
+## D-012 — RunState.depth is the CURRENT labyrinth's generation depth, held constant across a rift
+2026-08-30
+PROJECT_PLAN §7 explicitly flags "is depth persistent across rifts, does rifting advance it" as
+an open question deferred past M2. M3 still needs *some* depth value to pass to
+`LabyrinthGen.generate()` when a rift regenerates the map, since ring_count/ring_size derive from
+it and must stay consistent for "same ring index" to mean anything (a differently-shaped graph
+could lack the ring the player was just on). Decision: treat `RunState.depth` (declared, unused
+schema field) as "the depth parameter used for the CURRENTLY generated labyrinth," set once by
+the debug harness and read-but-never-written by the rift regeneration path. This answers the
+narrow question this session needs answered (what depth to regenerate with) without pre-deciding
+the open one (whether rifting should change it) — that stays for whichever milestone actually
+adds progression.
+
+## D-013 — Stats.scale's baseline is the multiset's live average, not a hardcoded number
+2026-08-30
+Gameplay constants (move speed, fire rate, damage) need a multiplier derived from a stat value,
+and the example multiset in both PROJECT_PLAN and this session's brief is `[9,5,1]` (average 5).
+Hardcoding "5 = neutral" would silently break the moment M4/M9 items widen or narrow spread
+(PROJECT_PLAN §1) and change the multiset itself. Decision: `Stats.scale(value, stat_values)`
+divides by `sum(stat_values)/count` computed fresh each call. Since the sum is conserved by
+permutation, this average is stable across every rift regardless of which stat holds which
+value — it only moves if the multiset itself changes, which is exactly when a hardcoded baseline
+would have gone stale anyway.
+
+## D-014 — stat_display matches old→new stat by VALUE for the "flying number" animation
+2026-08-30
+The brief calls the permutation animation the game's signature moment and asks the player to see
+values move between stats, not just watch numbers change in place. `Stats.permute` returns only
+the new assignment, not which physical value used to live where, so the UI has to infer it.
+Decision: for each stat's new value, search the OLD assignment for a stat holding that same
+value (preferring "this stat kept its own value," which needs no visible flight) and animate a
+label flying from that row to this one, removing matched entries from the search pool as it goes
+so two stats with a tied value don't both claim the same source. This is exact whenever the
+multiset has no repeated values (true for `[9,5,1]` and every case exercised this session);
+with a repeat it still produces a plausible, non-crashing flight rather than a wrong one, which
+is an acceptable trade-off for a value nobody can actually distinguish from its twin on screen.
+
+## D-015 — Rifts in the debug harness are siblings of RoomManager, not children of the room
+2026-08-30
+`scenes/debug/m3_rift_test.tscn` needs all three rift colors reliably available for repeated
+testing, but every room instance is transient — RoomManager frees and replaces it on every
+transition, including the regenerations rifts themselves trigger. Anything parented under the
+current room would be destroyed the moment any rift fires. Decision: the three test rifts are
+children of the scene root (siblings of RoomManager) at fixed positions near the map origin, and
+work because of D-007 (every generated room is instantiated at the same world origin regardless
+of which template or graph is active) — they end up looking like they're "in" whichever room is
+currently loaded without needing to be re-parented or re-spawned on every regeneration. The
+positions were chosen inside the smallest template's safe interior (`room_deadend`, 600×500) so
+they never clip into a wall no matter which template the current start room happens to be. This
+is separate from — and can coexist with — the real per-room rift spawning `LabyrinthGen`
+/`RoomManager` do for the actual generated graph (`_assign_rifts`, luck-scaled, never on the
+start room).
