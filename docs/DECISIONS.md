@@ -25,3 +25,116 @@ failures. An empty project.godot is a valid project marker, but `--editor --quit
 it because no setting is marked dirty. Generated instead via tools/init_project.gd, which sets
 application/config/name and calls ProjectSettings.save(), forcing the engine to write its own
 config_version. tools/ sits outside src/ so make check does not lint it as game code.
+
+## D-004 — Fixed 2D physics layer convention: walls / player / enemies / projectiles
+2026-08-29
+PROJECT_PLAN doesn't specify a physics layer scheme, and M1 needs one for wall collision,
+projectile-hits-enemy, and enemy-contact-damages-player to all resolve correctly without
+cross-system code references (EventBus is for game-logic signals, not physics queries).
+Decision: named layers 1=walls, 2=player, 3=enemies, 4=projectiles, set via
+`layer_names/2d_physics/*` in project.godot so the editor UI shows names instead of numbers.
+Player collides physically with walls only (mask=1); enemies and projectiles are Area2D and
+detect via mask, not physical collision, so the player currently overlaps enemies rather than
+being blocked by them — contact damage still applies via overlap. Future milestones (M5 enemy
+variety, M4 projectile modification) should reuse these four layers rather than inventing new
+ones; add a fifth layer only for a genuinely new physical category (e.g. hazards).
+
+Also established this session: input map added programmatically (a small headless SceneTree
+script setting ProjectSettings.set_setting("input/<action>", ...) then ProjectSettings.save()),
+not hand-typed into project.godot, to avoid subtly malformed InputEvent resource syntax. Gotcha:
+ProjectSettings.set_initial_value() must NOT be given the same value as set_setting(), or save()
+treats the setting as unchanged-from-default and silently omits it from the file.
+
+## D-005 — Room templates build walls/doors procedurally, not as hand-placed scene nodes
+2026-08-29
+PROJECT_PLAN M2 says door slots should be hand-authored per template, but a graph node's
+active doors are only known at generation time (a template capable of a door on side X may or
+may not use it in a given instance), so the actual gap geometry can't be baked into the .tscn
+file in advance — the same template has to render as a 1-door dead end in one graph and a
+3-door junction in another. Decision: each data/rooms/*.tscn hand-authors only `room_size` and
+`door_sides` (which sides CAN host a door — this part stays genuinely hand-picked per
+template); room_template.gd builds the actual floor/wall/door nodes in `_ready()` from
+`room_size` plus whichever subset of `door_sides` room_manager passes into `setup()` before the
+node enters the tree. Hand-authoring 6 static scenes with correct wall-gap math for every
+possible active-door subset was judged more error-prone than one procedural builder.
+
+## D-006 — labyrinth_gen discovers templates by scanning data/rooms/, not a hardcoded list
+2026-08-29
+Generation needs each template's door-capacity (door_sides) to assign templates to graph nodes
+by required degree. Hardcoding that metadata as a table in labyrinth_gen.gd would mean adding a
+7th room template requires editing a system file — a direct violation of "new content = a new
+file in data/, never edit a system to add content" (CLAUDE.md). Decision: `LabyrinthGen`
+scans `res://data/rooms/*.tscn` at generation time, briefly instantiates each (never added to
+a tree — just to read the `room_size`/`door_sides` export defaults, then `.free()`s it
+immediately) to build its own template registry. Adding a template is now purely a new .tscn
+file, matching the pattern ItemDB will use for data/items/ at M4.
+
+## D-007 — Door sides are per-room flavor, not shared world coordinates
+2026-08-29
+Rooms are swapped wholesale on transition (the old room is freed, the new one instantiated at
+the same origin), not tiled into a shared coordinate space, so there was no requirement that
+exiting a room's "east" door has to arrive at a matching "west" door in the next room — each
+graph edge just records, independently for each endpoint, which of that room's own door_sides
+hosts it. This simplified template/degree assignment considerably (any template with enough
+door_sides can serve any node, no directional matching needed) at the cost of the player
+occasionally exiting east and arriving through, say, a south door — judged an acceptable/even
+appropriate disorienting-labyrinth effect rather than a bug, since M2's explicit goal is
+choosing between doors, not spatial navigation.
+
+## D-008 — LabyrinthGen backfills the graph when the branch frontier dies out early
+2026-08-29
+The tree-growth loop (pick an open branch slot, maybe give the new room 0/1/2 more open slots)
+can exhaust its frontier — every branch dead-ending — well before hitting the seed's target
+room_count, especially at low luck. Verified in a headless script: this made luck's effect on
+map size a per-seed coin flip rather than a reliable trend (e.g. one low-luck seed produced as
+many rooms as a high-luck one, purely from randomness in *when* branches happened to
+dead-end). Since the user explicitly wants to eyeball individual seeds and judge "does cranking
+luck visibly make the map more generous" one seed at a time, average-case correctness wasn't
+enough. Decision: after the branch-driven pass, if room_count isn't yet met, keep attaching new
+rooms to any existing room with spare door capacity (degree < 4) until it is (or genuinely no
+capacity remains). This makes room_count track the luck-driven target reliably per seed, while
+the earlier branch-driven pass still governs where the actual branch points and dead ends land.
+
+## D-009 — Dead-end "reward" is an unlabeled placeholder, not an item pickup
+2026-08-29
+PROJECT_PLAN M2 says dead ends should "hold something worth the detour," but items don't exist
+until M4 and CLAUDE.md's session scope explicitly excludes them. Decision: room_manager spawns
+a plain gold square (Area2D + ColorRect, no script of its own) in dead-end rooms that just frees
+itself on player contact — a placeholder that visually rewards exploring the dead end without
+implying a real item system. No new EventBus signal was added for this; EventBus is LOCKED and
+a signal wasn't needed for a self-contained "touch it, it disappears" interaction.
+
+## D-010 — M2 topology revised from branching tree to concentric rings
+2026-08-29
+Mid-milestone revision, requested directly: the tree-of-branches structure from the original M2
+pass gave real choice-between-doors, but had no sense of "progress toward the center" and no
+natural greed lever (more branches was strictly more content, never a trade-off). Decision:
+rooms are laid out in concentric rings around a center — ring 0 outermost (start), the innermost
+ring holds the exit. Doors are relabeled INWARD / OUTWARD / CLOCKWISE / COUNTERCLOCKWISE, mapped
+1:1 onto the existing door_sides template system (S=INWARD, N=OUTWARD, E=CLOCKWISE,
+W=COUNTERCLOCKWISE — a fixed mapping, not per-room arbitrary flavor as under the old D-007
+regime, since direction now has to mean something for both the overlay and the player). Rooms
+within a ring form a cycle via lateral (CW/CCW) doors; radial (IN/OUT) doors between adjacent
+rings are comparatively scarce and are luck's primary lever (`radial_count`). Rationale for the
+three structural claims in the brief:
+- Ring cycles give non-linearity for free: severing 1+ lateral edge per ring (never leaving a
+  ring a guaranteed complete loop) means the ring itself isn't a trivial sweep, without needing
+  branch/dead-end machinery to create that effect.
+- Radius gives a built-in difficulty gradient: "ring index" is legible progress toward the exit
+  in a way "distance from root in a tree" wasn't as directly.
+- Radial-vs-lateral is a greed decision baked into the geometry: at low luck (few radial doors)
+  the player must walk the ring to find a way in, passing more of its rooms/rewards along the
+  way; at high luck, radial shortcuts let the player skip straight inward and skip that content —
+  the same skip-vs-explore tension the old branch_chance was chasing, but now readable on the map
+  itself rather than only inferable from room count.
+Severing is unconditional (every ring always loses at least one lateral edge, independent of
+luck) — luck's stated job is radial scarcity and reward density, not ring completeness, so tying
+severing to luck as well would double up the same lever. Reward density piggybacks luck the same
+way: dead-end rooms (degree 1 after severing/repair) always hold the placeholder reward from
+D-009; luck additionally rolls a chance per normal room. Connectivity after severing is restored
+by the same greedy-generate-then-backfill pattern as D-008 — un-sever the nearest lateral edge
+touching an unreached room until a BFS from start reaches every room — verified in a headless
+script across a spread of seeds/depths/lucks (see scratchpad, not part of the repo). Also
+verified headlessly: door_map is still a consistent bijection, every template's door_sides is a
+superset of whatever physical sides its door_map actually uses, and a real RoomManager walks
+every generated door to the room the graph says it should.

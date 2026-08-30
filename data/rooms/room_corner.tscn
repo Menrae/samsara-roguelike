@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/entities/room_template.gd" id="1"]
+
+[node name="RoomCorner" type="Node2D"]
+script = ExtResource("1")
+room_size = Vector2(700, 550)
+door_sides = Array[String](["N", "E"])

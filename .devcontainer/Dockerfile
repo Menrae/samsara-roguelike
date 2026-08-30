@@ -21,6 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libfontconfig1 \
     libudev1 \
+    libxkbcommon0 \
+    libxkbcommon-x11-0 \
+    libdbus-1-3 \
+    libpulse0 \
+    libxext6 \
+    libxrender1 \
     unzip \
     wget \
     ca-certificates \

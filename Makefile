@@ -14,5 +14,8 @@ format: ## Format GDScript in src/ (if it exists) with gdformat.
 editor: ## Launch the Godot editor GUI via WSLg.
 	@bash scripts/godot.sh --editor
 
-run: ## Run the project headless.
-	@bash scripts/godot.sh --headless
+run: ## Run the project with a window
+	godot --path .
+
+run-headless: ## Run the project headless (CI / smoke checks)
+	godot --headless --path .
